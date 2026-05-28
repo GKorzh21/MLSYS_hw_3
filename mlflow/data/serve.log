@@ -1,0 +1,34 @@
+2025/11/01 20:22:15 INFO mlflow.models.flavor_backend_registry: Selected backend for flavor 'python_function'
+2025/11/01 20:22:15 INFO mlflow.pyfunc.backend: === Running command 'exec gunicorn --timeout=60 -b 0.0.0.0:6000 -w 1 ${GUNICORN_CMD_ARGS} -- mlflow.pyfunc.scoring_server.wsgi:app'
+[2025-11-01 20:22:15 +0000] [220] [INFO] Starting gunicorn 20.1.0
+[2025-11-01 20:22:15 +0000] [220] [ERROR] Connection in use: ('0.0.0.0', 6000)
+[2025-11-01 20:22:15 +0000] [220] [ERROR] Retrying in 1 second.
+[2025-11-01 20:22:16 +0000] [220] [ERROR] Connection in use: ('0.0.0.0', 6000)
+[2025-11-01 20:22:16 +0000] [220] [ERROR] Retrying in 1 second.
+[2025-11-01 20:22:17 +0000] [220] [ERROR] Connection in use: ('0.0.0.0', 6000)
+[2025-11-01 20:22:17 +0000] [220] [ERROR] Retrying in 1 second.
+[2025-11-01 20:22:18 +0000] [220] [ERROR] Connection in use: ('0.0.0.0', 6000)
+[2025-11-01 20:22:18 +0000] [220] [ERROR] Retrying in 1 second.
+[2025-11-01 20:22:19 +0000] [220] [ERROR] Connection in use: ('0.0.0.0', 6000)
+[2025-11-01 20:22:19 +0000] [220] [ERROR] Retrying in 1 second.
+[2025-11-01 20:22:20 +0000] [220] [ERROR] Can't connect to ('0.0.0.0', 6000)
+Traceback (most recent call last):
+  File "/usr/local/bin/mlflow", line 8, in <module>
+    sys.exit(cli())
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 1462, in __call__
+    return self.main(*args, **kwargs)
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 1383, in main
+    rv = self.invoke(ctx)
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 1850, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 1850, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 1246, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/usr/local/lib/python3.10/site-packages/click/core.py", line 814, in invoke
+    return callback(*args, **kwargs)
+  File "/usr/local/lib/python3.10/site-packages/mlflow/models/cli.py", line 105, in serve
+    return get_flavor_backend(
+  File "/usr/local/lib/python3.10/site-packages/mlflow/pyfunc/backend.py", line 254, in serve
+    raise Exception(
+Exception: Command '['bash', '-c', 'exec gunicorn --timeout=60 -b 0.0.0.0:6000 -w 1 ${GUNICORN_CMD_ARGS} -- mlflow.pyfunc.scoring_server.wsgi:app']' returned non zero return code. Return code = 1

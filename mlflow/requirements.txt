@@ -1,0 +1,7 @@
+mlflow==2.5.0
+scikit-learn
+pandas
+pyarrow
+redis
+boto3
+joblib

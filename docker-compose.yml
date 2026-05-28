@@ -1,0 +1,203 @@
+version: "3.8"
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: hw3-minio
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Web console
+    volumes:
+      - ./minio/data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  postgres:
+    image: postgres:13
+    container_name: hw3-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: hw3-airflow-init
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      # или AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ...
+    volumes:
+      - ./airflow:/opt/airflow
+      - airflow_output:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: >
+      bash -c "chown -R airflow:root /data || true &&
+               airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: hw3-airflow-web
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ./airflow:/opt/airflow
+      - ./spark-jobs:/opt/airflow/spark-jobs
+      - airflow_output:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: >
+      bash -c "chown -R airflow:root /data || true &&
+              exec airflow webserver --pid /tmp/airflow-webserver.pid"
+    ports:
+      - "8080:8080"      
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+      spark-master:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: |
+      bash -c "
+        airflow db init &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+        airflow webserver --pid /tmp/airflow-webserver.pid
+      "
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: hw3-airflow-scheduler
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ./airflow:/opt/airflow
+      - ./spark-jobs:/opt/airflow/spark-jobs
+      - airflow_output:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: >
+      bash -c "chown -R airflow:root /data || true &&
+              exec airflow scheduler --pid /tmp/airflow-scheduler.pid"
+    command: scheduler --pid /tmp/airflow-scheduler.pid
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+      spark-master:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: ./spark/Dockerfile
+    image: hw3-spark-master
+    container_name: hw3-spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./spark-jobs:/opt/app/spark-jobs
+      - airflow_output:/data/output
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: ./spark/Dockerfile
+    image: hw3-spark-worker
+    container_name: hw3-spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark-jobs:/opt/app/spark-jobs
+      - airflow_output:/data/output
+
+  mlflow:
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
+    container_name: hw3-mlflow
+    environment:
+      - MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+      - MLFLOW_SQL_ALCHEMY_CONN=sqlite:////mlflow/mlflow.db
+      - MLFLOW_SERVER_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,::1,mlflow,localhost:6000,127.0.0.1:6000
+    volumes:
+      - ./mlflow/data:/mlflow
+      - airflow_output:/data
+    ports:
+      - "5000:5000"   # mlflow server UI (tracking)
+      - "6000:6000"   # model serve (we will serve model inside container on 6000)
+    command: >
+      bash -c "mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root /mlflow/artifacts --host 0.0.0.0 --port 5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  
+volumes:
+  redis-data:
+  airflow_output:
+  postgres-data:
